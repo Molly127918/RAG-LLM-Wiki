@@ -3,7 +3,7 @@
 以 7 篇 RAG（Retrieval-Augmented Generation，檢索增強生成）論文建立的 LLM Wiki，
 並用此 Wiki 作為唯一知識來源，製作給一般大眾的中文教學 HTML 簡報。
 
-- 📊 教學簡報：（上線後填入）
+- 📊 教學簡報：https://Molly127918.github.io/rag-llm-wiki/slides/
 - 📚 Wiki 入口：[wiki/index.md](wiki/index.md)
 - 📝 執行紀錄：[wiki/log.md](wiki/log.md)
 - 📐 規則書：[CLAUDE.md](CLAUDE.md)
