@@ -1,0 +1,562 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI 也會翻書找答案？認識 RAG</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Huninn&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #FFF8F0;
+    --mint: #8FD3C1;
+    --mint-soft: #DDF2EC;
+    --coral: #FF9F9F;
+    --coral-soft: #FFE3E3;
+    --text: #444;
+    --muted: #999;
+    --card: #FFFFFF;
+    --shadow: 0 6px 20px rgba(68, 68, 68, 0.08);
+    --radius: 16px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Huninn", "jf-openhuninn", "jf open 粉圓", "Microsoft JhengHei", "微軟正黑體", sans-serif;
+    overflow: hidden;
+  }
+  #viewport {
+    position: fixed; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #stage {
+    width: 1280px; height: 720px;
+    position: relative;
+    transform-origin: center center;
+    flex: none;
+  }
+  .slide {
+    position: absolute; inset: 0;
+    padding: 64px 88px 72px;
+    display: none;
+    flex-direction: column;
+  }
+  .slide.active { display: flex; }
+
+  h1 { font-size: 64px; line-height: 1.25; font-weight: 400; }
+  h2 { font-size: 46px; line-height: 1.3; font-weight: 400; margin-bottom: 28px; }
+  h2 .tag {
+    display: inline-block; font-size: 22px; vertical-align: middle;
+    background: var(--coral-soft); color: #C25E5E;
+    border-radius: 999px; padding: 4px 14px; margin-right: 12px;
+  }
+  .lead { font-size: 26px; line-height: 1.6; margin-bottom: 24px; }
+  .hl { background: linear-gradient(transparent 60%, var(--coral-soft) 60%); }
+  .mint { color: #3E9C85; }
+  .coral { color: #E57373; }
+
+  .row { display: flex; gap: 28px; flex: 1; min-height: 0; }
+  .col { flex: 1; display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+  .card {
+    background: var(--card); border-radius: var(--radius);
+    box-shadow: var(--shadow); padding: 26px 30px;
+  }
+  .card.mint-card { background: var(--mint-soft); box-shadow: none; }
+  .card.coral-card { background: var(--coral-soft); box-shadow: none; }
+  .card h3 { font-size: 26px; font-weight: 400; margin-bottom: 10px; }
+  .card p, .card li { font-size: 22px; line-height: 1.6; }
+
+  ul.points { list-style: none; display: flex; flex-direction: column; gap: 16px; }
+  ul.points li {
+    font-size: 25px; line-height: 1.55; padding-left: 34px; position: relative;
+  }
+  ul.points li::before {
+    content: ""; position: absolute; left: 6px; top: 14px;
+    width: 12px; height: 12px; border-radius: 50%; background: var(--mint);
+  }
+  ul.points li b { font-weight: 400; color: #3E9C85; }
+
+  .analogy, .demo {
+    border-radius: var(--radius); padding: 18px 24px;
+    font-size: 22px; line-height: 1.6;
+  }
+  .analogy { background: var(--mint-soft); }
+  .demo { background: var(--coral-soft); }
+  .label {
+    display: inline-block; font-size: 18px; border-radius: 999px;
+    padding: 2px 12px; margin-right: 8px; background: #fff; vertical-align: 2px;
+  }
+
+  .bignum { font-size: 76px; line-height: 1.1; color: #E57373; }
+  .bignum.m { color: #3E9C85; }
+  .numlabel { font-size: 22px; line-height: 1.5; margin-top: 6px; }
+  .small { font-size: 18px; line-height: 1.6; color: #777; }
+
+  .steps { display: flex; gap: 22px; }
+  .step { flex: 1; }
+  .step .n {
+    width: 46px; height: 46px; border-radius: 50%; background: var(--mint);
+    color: #fff; font-size: 24px; display: flex; align-items: center; justify-content: center;
+    margin-bottom: 12px;
+  }
+
+  .timeline { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
+  .timeline span {
+    font-size: 18px; background: #fff; border-radius: 999px; padding: 6px 14px;
+    box-shadow: var(--shadow); color: #666;
+  }
+  .timeline i { font-style: normal; color: var(--mint); font-size: 18px; }
+
+  .footer {
+    position: absolute; right: 40px; bottom: 24px;
+    font-size: 15px; color: var(--muted); text-align: right;
+  }
+  .footer .pg { margin-left: 16px; color: #bbb; }
+
+  .cover { align-items: center; justify-content: center; text-align: center; }
+  .cover .sub { font-size: 28px; color: #777; margin-top: 18px; }
+  .center { align-items: center; justify-content: center; }
+</style>
+</head>
+<body>
+<div id="viewport"><div id="stage">
+
+<!-- 1 封面 -->
+<section class="slide cover" data-src="">
+  <svg width="210" height="200" viewBox="0 0 210 200" aria-hidden="true">
+    <ellipse cx="105" cy="186" rx="62" ry="8" fill="#F1E4D6"/>
+    <rect x="35" y="30" width="140" height="140" rx="22" fill="#8FD3C1"/>
+    <rect x="47" y="42" width="116" height="116" rx="16" fill="#FFFFFF"/>
+    <rect x="98" y="42" width="14" height="116" fill="#DDF2EC"/>
+    <circle cx="80" cy="95" r="7" fill="#444"/>
+    <circle cx="130" cy="95" r="7" fill="#444"/>
+    <circle cx="68" cy="114" r="8" fill="#FF9F9F" opacity="0.7"/>
+    <circle cx="142" cy="114" r="8" fill="#FF9F9F" opacity="0.7"/>
+    <path d="M92 116 Q105 128 118 116" stroke="#444" stroke-width="4" fill="none" stroke-linecap="round"/>
+    <rect x="62" y="16" width="20" height="26" rx="6" fill="#FF9F9F"/>
+  </svg>
+  <h1 style="margin-top:24px">AI 也會翻書找答案？</h1>
+  <h1 class="mint" style="font-size:52px">認識 RAG 檢索增強生成</h1>
+  <p class="sub">Retrieval-Augmented Generation｜給所有人的入門簡報</p>
+</section>
+
+<!-- 2 會亂講 -->
+<section class="slide" data-src="來源：Lewis et al., 2020；Es et al., 2023；Ovadia et al., 2023；Gao et al., 2024">
+  <h2>AI 很聰明，卻會一本正經地亂講</h2>
+  <div class="row">
+    <div class="col">
+      <ul class="points">
+        <li><b>幻覺（hallucination）</b>：說出聽起來合理、其實是錯的內容</li>
+        <li><b>知識過時</b>：只知道訓練截止日以前的事</li>
+        <li><b>冷門知識記不住</b>：資料裡很少出現的事實，大模型也記不住</li>
+      </ul>
+      <div class="analogy"><span class="label">💡類比</span>像一位記憶力超好、但很久沒看新聞的朋友，你問他昨天的事，他會照印象編一個很像的答案。</div>
+    </div>
+    <div class="col" style="flex:0.8">
+      <div class="demo">
+        <span class="label">💡 示意</span><br>
+        你問 AI：<br><b style="font-weight:400;font-size:26px">「學校圖書館這學期幾點關門？」</b><br><br>
+        AI 沒有看過這學期的公告，可能用舊印象回答上學期的時間，而且說得很肯定。
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 3 答錯原因 -->
+<section class="slide" data-src="來源：Ovadia et al., 2023">
+  <h2>AI 為什麼會答錯？</h2>
+  <p class="lead">研究整理出五種原因，可以分成三類：</p>
+  <div class="row">
+    <div class="col">
+      <div class="card"><h3>📚 根本沒學過、或學的是舊的</h3><p>缺乏這個領域的知識；事情發生在訓練之後</p></div>
+      <div class="card"><h3>沒記住、或忘掉了</h3><p>看過但次數太少；後來的訓練讓它忘了原本會的</p></div>
+      <div class="card"><h3>會，但沒用好</h3><p>其實知道答案，推理時卻沒有好好運用</p></div>
+    </div>
+    <div class="col" style="flex:0.75;justify-content:center">
+      <div class="analogy"><span class="label">💡類比</span>就像學生考試答錯：沒上過這一章、課本是舊版、上課恍神、背了新的忘了舊的，或是會但算錯。</div>
+    </div>
+  </div>
+</section>
+
+<!-- 4 先查再答 -->
+<section class="slide" data-src="來源：Lewis et al., 2020">
+  <h2>解法：先查資料，再回答 📖</h2>
+  <div class="row">
+    <div class="col">
+      <p class="lead" style="margin-bottom:6px">2020 年，研究者正式提出 <span class="hl">RAG（檢索增強生成）</span>，結合兩種記憶：</p>
+      <ul class="points">
+        <li><b>腦中的記憶</b>：模型訓練時記下的知識</li>
+        <li><b>外部的資料庫</b>：可以隨時查閱，例如維基百科</li>
+      </ul>
+      <div class="analogy"><span class="label">💡類比</span>RAG 就像「開書考」：不必把整本課本背下來，考試時翻到相關段落，再用自己的話寫出答案。</div>
+    </div>
+    <div class="col center" style="flex:0.7">
+      <div class="card" style="text-align:center;width:100%">
+        <div class="bignum m">42.7%</div>
+        <p class="numlabel">人工評估時，評審認為 RAG 寫的內容<br>比較符合事實的比例</p>
+        <p class="small" style="margin-top:10px">沒有查資料的模型只有 7.1%</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 5 三步驟 -->
+<section class="slide" data-src="來源：Gao et al., 2024">
+  <h2>RAG 的三個步驟</h2>
+  <div class="steps">
+    <div class="step card"><div class="n">1</div><h3>建立索引</h3><p>事先把文件切成小段，整理好存進資料庫</p></div>
+    <div class="step card"><div class="n">2</div><h3>檢索</h3><p>收到問題時，找出最相關的幾段</p></div>
+    <div class="step card"><div class="n">3</div><h3>生成</h3><p>把問題和找到的段落一起交給 AI，寫出答案</p></div>
+  </div>
+  <div class="demo" style="margin-top:28px">
+    <span class="label">💡 示意</span>問「學校圖書館這學期幾點關門？」：① 學校公告事先存進資料庫 → ② 找出「本學期開館時間」那則公告 → ③ AI 根據這則公告回答，還能告訴你答案出自哪裡。
+  </div>
+  <div class="analogy" style="margin-top:16px"><span class="label">💡類比</span>像去圖書館：館員先把書編好目錄，你來問問題，館員找出幾本書，你讀完再寫報告。</div>
+</section>
+
+<!-- 6 怎麼找 -->
+<section class="slide" data-src="來源：Gao et al., 2024；Lewis et al., 2020">
+  <h2>電腦怎麼「找」資料？</h2>
+  <div class="row">
+    <div class="col">
+      <div class="card">
+        <h3>第一步：切塊</h3>
+        <p>長文件先切成小段。例如最早的 RAG 把維基百科切成每段 100 字。</p>
+      </div>
+      <div class="analogy"><span class="label">💡類比</span>像把厚書拆成索引卡：卡片太大塞了無關內容，太小又會把一句話切成兩半。</div>
+    </div>
+    <div class="col">
+      <div class="card">
+        <h3>第二步：把文字變成「向量」</h3>
+        <p>把每段文字轉成一串數字，意思越像的文字，數字也越接近。查詢時，找出和問題最接近的幾段。</p>
+      </div>
+      <div class="analogy"><span class="label">💡類比</span>想像每段文字是地圖上的一個點，意思越像就靠得越近，找答案就是挑離問題最近的幾個點。</div>
+    </div>
+  </div>
+</section>
+
+<!-- 7 找字 vs 找意思 -->
+<section class="slide" data-src="來源：Gao et al., 2024；Lewis et al., 2020">
+  <h2>兩種找法：找字 vs. 找意思</h2>
+  <div class="row">
+    <div class="col">
+      <div class="card">
+        <h3>關鍵字比對</h3>
+        <p>看問題和文件有沒有<span class="hl">相同的字詞</span>。<br>擅長：充滿專有名詞的事實查核。</p>
+      </div>
+      <div class="analogy"><span class="label">💡類比</span>像用 Ctrl+F 找字，只找得到一模一樣的詞。</div>
+    </div>
+    <div class="col">
+      <div class="card">
+        <h3>語意比對</h3>
+        <p>比較<span class="hl">意思是否相近</span>，用字不同也找得到。<br>擅長：一般的開放式問答。</p>
+      </div>
+      <div class="analogy"><span class="label">💡類比</span>像問懂行的店員：你說「會流鼻水的季節病」，他知道要找「過敏」或「感冒」的書。</div>
+    </div>
+  </div>
+  <p class="lead" style="margin-top:22px;margin-bottom:0">兩種方法可以<b class="mint" style="font-weight:400">混合使用</b>，互相補足。</p>
+</section>
+
+<!-- 8 換資料就更新 -->
+<section class="slide" data-src="來源：Lewis et al., 2020">
+  <h2>換掉資料，知識就更新</h2>
+  <div class="row">
+    <div class="col">
+      <div class="demo"><span class="label">💡 示意</span>下學期圖書館改時間了？不用重新訓練 AI，只要把資料庫裡的公告換成新的就好。</div>
+      <div class="card">
+        <h3>真實實驗：問 AI「某國現任領袖是誰？」</h3>
+        <p>研究者找了 82 位在 2016 到 2018 年間換人的世界領袖，分別用 2016 年和 2018 年版的維基百科當資料庫來測試。</p>
+      </div>
+      <div class="analogy"><span class="label">💡類比</span>AI 的內部記憶像裝訂好的百科全書，改內容要重新改版；RAG 的資料庫像活頁夾，換一頁就好。</div>
+    </div>
+    <div class="col" style="flex:0.75">
+      <div class="card" style="text-align:center">
+        <div class="bignum m" style="font-size:58px">70%</div>
+        <p class="numlabel">資料年份對得上：<br>用 2016 年資料，問 2016 年的領袖</p>
+      </div>
+      <div class="card" style="text-align:center">
+        <div class="bignum" style="font-size:58px">4%</div>
+        <p class="numlabel">資料年份對不上：<br>用 2016 年資料，問 2018 年的領袖</p>
+      </div>
+      <p class="small">另一組：用 2018 年資料問 2018 年領袖答對 68%，問 2016 年領袖只剩 12%</p>
+    </div>
+  </div>
+</section>
+
+<!-- 9 RAG vs 微調 -->
+<section class="slide" data-src="來源：Ovadia et al., 2023；Gao et al., 2024">
+  <h2>開書考 vs. 考前苦讀</h2>
+  <div class="row">
+    <div class="col">
+      <p class="lead" style="margin-bottom:6px">要讓 AI 學會新知識，有兩條路：</p>
+      <ul class="points">
+        <li><b>RAG</b>：回答時再去翻資料（開書考）</li>
+        <li><b>微調（fine-tuning）</b>：拿新資料繼續訓練，讓它背起來（考前苦讀）</li>
+        <li>微調可能「學了新的、忘了舊的」</li>
+      </ul>
+      <p class="small" style="margin-top:20px">兩種方法一起用會更好嗎？研究結果不一致：有綜述認為可以互補，也有實驗顯示合併後反而比只用 RAG 差。</p>
+    </div>
+    <div class="col" style="flex:0.85">
+      <div class="card">
+        <h3>考 AI 沒看過的 2023 年時事</h3>
+        <p class="small">以一個 70 億參數的開源模型為例</p>
+        <div style="display:flex;gap:22px;margin-top:14px;text-align:center">
+          <div style="flex:1"><div class="bignum" style="font-size:64px;color:#bbb">50%</div><p class="numlabel">微調後<br><span class="small">（原本 48%）</span></p></div>
+          <div style="flex:1"><div class="bignum m" style="font-size:64px">88%</div><p class="numlabel">使用 RAG</p></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 10 迷失在中間 -->
+<section class="slide" data-src="來源：Liu et al., 2023">
+  <h2>迷失在中間：AI 也會漏看 👀</h2>
+  <div class="row">
+    <div class="col">
+      <p class="lead" style="margin-bottom:6px">把含有答案的文件放在一疊資料的不同位置：</p>
+      <ul class="points">
+        <li>放在<b>開頭或結尾</b>：AI 表現最好</li>
+        <li>放在<b>中間</b>：表現明顯變差，有的模型下降超過 20%</li>
+        <li>人也一樣：背清單時最記得第一個和最後一個</li>
+      </ul>
+      <div class="analogy"><span class="label">💡類比</span>就像聽一場長演講，大家都記得開場和結尾，中間講了什麼卻常想不起來。</div>
+    </div>
+    <div class="col center" style="flex:0.8">
+      <div class="card" style="width:100%">
+        <svg viewBox="0 0 360 230" width="100%" aria-label="U 型曲線示意">
+          <line x1="40" y1="190" x2="340" y2="190" stroke="#ddd" stroke-width="2"/>
+          <line x1="40" y1="20" x2="40" y2="190" stroke="#ddd" stroke-width="2"/>
+          <path d="M55 45 C 120 170, 260 170, 325 70" stroke="#8FD3C1" stroke-width="6" fill="none" stroke-linecap="round"/>
+          <circle cx="190" cy="137" r="8" fill="#FF9F9F"/>
+          <text x="55" y="215" font-size="16" fill="#777">開頭</text>
+          <text x="172" y="215" font-size="16" fill="#777">中間</text>
+          <text x="300" y="215" font-size="16" fill="#777">結尾</text>
+          <text x="8" y="30" font-size="15" fill="#777">答對</text>
+        </svg>
+        <p class="small" style="text-align:center">示意圖：答案位置 vs. 答對程度（U 型曲線）</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 11 分歧：越多越好？ -->
+<section class="slide" data-src="來源：Lewis et al., 2020；Liu et al., 2023；Li et al., 2024；Gao et al., 2024">
+  <h2><span class="tag">⚠️ 觀點分歧</span>資料給越多越好嗎？</h2>
+  <div class="row">
+    <div class="col">
+      <div class="card"><h3>2020 年的研究</h3><p>多給幾份文件，成績大多會跟著上升</p></div>
+      <div class="card"><h3>2023 年的研究</h3><p>超過 20 份以後幾乎沒有進步，卻更慢、更貴</p></div>
+      <div class="card"><h3>2024 年的研究</h3><p>給越多片段越好，逐漸接近讀全文的效果</p></div>
+    </div>
+    <div class="col" style="flex:0.85">
+      <div class="card coral-card" style="text-align:center">
+        <div class="bignum" style="font-size:64px">+1.5%</div>
+        <p class="numlabel">文件從 20 份加到 50 份，<br>只多答對這麼一點<br><span class="small">（以 GPT-3.5-Turbo 為例）</span></p>
+      </div>
+      <div class="card mint-card">
+        <h3>為什麼說法不同？</h3>
+        <p>年代、模型和任務都不一樣。比較合理的結論是：<span class="hl">多給資料有幫助，但效果會遞減</span>，資料要精不要多。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 12 怎麼查得更好 -->
+<section class="slide" data-src="來源：Gao et al., 2024；Liu et al., 2023">
+  <h2>怎麼查得更好？三個小技巧 🛠️</h2>
+  <div class="steps">
+    <div class="step card"><div class="n">前</div><h3>把問題問清楚</h3><p>先改寫使用者的問題，或拆成幾個小問題再查</p></div>
+    <div class="step card"><div class="n">後</div><h3>整理找到的資料</h3><p>把最相關的排到前面，刪掉用不到的</p></div>
+    <div class="step card"><div class="n">再</div><h3>不只查一次</h3><p>邊寫邊查，或讓 AI 自己判斷要不要再查</p></div>
+  </div>
+  <div class="analogy" style="margin-top:28px"><span class="label">💡類比</span>只查一次，就像問一次路就出發；邊寫邊查，像邊走邊問；讓 AI 自己判斷，則是熟悉的路直接走，不熟的才停下來問。</div>
+</section>
+
+<!-- 13 演進 -->
+<section class="slide" data-src="來源：Gao et al., 2024；Singh et al., 2026">
+  <h2>RAG 的演進：從照表操課到自己判斷</h2>
+  <div class="row" style="align-items:center">
+    <div class="col">
+      <div class="card"><h3>過去：固定流程</h3><p>查一次、讀一次、答一次，每個問題都走同樣的步驟</p></div>
+    </div>
+    <div style="font-size:46px;color:#8FD3C1">➜</div>
+    <div class="col">
+      <div class="card mint-card"><h3>現在：能自己判斷</h3><p>依問題決定要不要查、去哪裡查、查幾次</p></div>
+    </div>
+  </div>
+  <div class="analogy" style="margin-top:20px"><span class="label">💡類比</span>從只有一個按鈕的咖啡機，變成一套可以自由組裝的咖啡器材。</div>
+  <div class="timeline" style="margin-top:22px">
+    <span>樸素 RAG</span><i>→</i><span>進階 RAG</span><i>→</i><span>模組化 RAG</span><i>→</i><span>圖譜 RAG</span><i>→</i><span>代理式 RAG</span>
+  </div>
+</section>
+
+<!-- 14 代理式 RAG -->
+<section class="slide" data-src="來源：Singh et al., 2026">
+  <h2>代理式 RAG：AI 自己當專案經理 🧑‍💼</h2>
+  <div class="row">
+    <div class="col">
+      <div class="analogy"><span class="label">💡類比</span>AI 像一位專案經理，會自己決定：<br>要不要查資料？去哪裡查？查到的夠不夠好？要不要再查一次？</div>
+      <p class="lead" style="margin-top:12px">例如簡單問題直接回答，複雜問題才分好幾步查找。</p>
+    </div>
+    <div class="col">
+      <div class="card coral-card">
+        <h3>但它不是萬靈丹</h3>
+        <ul class="points">
+          <li>比較慢、比較貴、比較複雜，簡單問題用一般 RAG 就夠了</li>
+          <li>找資料的能力仍然最重要</li>
+          <li>需要設限制，也需要人類監督</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 15 評估 -->
+<section class="slide" data-src="來源：Es et al., 2023">
+  <h2>怎麼幫 RAG 打分數？ 📝</h2>
+  <div class="row">
+    <div class="col">
+      <ul class="points">
+        <li><b>忠實度</b>：答案在找到的資料裡有根據嗎？</li>
+        <li><b>答案相關性</b>：有沒有切題？</li>
+        <li><b>上下文相關性</b>：找到的資料精簡嗎？</li>
+      </ul>
+      <div class="analogy"><span class="label">💡類比</span>像老師批改報告：內容在參考資料裡找得到嗎？有沒有切題？引用的資料是不是都用得上？</div>
+    </div>
+    <div class="col center" style="flex:0.75">
+      <div class="card" style="text-align:center;width:100%">
+        <div class="bignum m">95%</div>
+        <p class="numlabel">用 AI 當評審判斷「忠實度」時，<br>和人類評審意見一致的比例</p>
+        <p class="small" style="margin-top:10px">這套方法叫 Ragas，不需要準備標準答案</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 16 限制 -->
+<section class="slide" data-src="來源：Lewis et al., 2020；Gao et al., 2024；Li et al., 2024；Singh et al., 2026">
+  <h2>RAG 不是萬能的</h2>
+  <div class="row">
+    <div class="col">
+      <div class="card"><h3>📕 資料本身可能有錯</h3><p>錯誤資訊可能比沒有資訊更糟</p></div>
+      <div class="card"><h3>找不到，後面全白費</h3><p>找資料的品質仍是最大瓶頸</p></div>
+    </div>
+    <div class="col">
+      <div class="card"><h3>不擅長需要多步推理的問題</h3><p>例如要先查出「歌手是誰」，才能再查「他是哪國人」</p></div>
+      <div class="card"><h3>更慢、要顧安全</h3><p>多一步檢索；上線時也要注意不洩漏內部資料</p></div>
+    </div>
+  </div>
+  <div class="analogy" style="margin-top:20px"><span class="label">💡類比</span>開書考時，如果課本本身印錯了，翻書反而會抄到錯誤答案。</div>
+</section>
+
+<!-- 17 長上下文 -->
+<section class="slide" data-src="來源：Li et al., 2024；Gao et al., 2024">
+  <h2>AI 越來越強，還需要 RAG 嗎？</h2>
+  <div class="row">
+    <div class="col">
+      <p class="lead" style="margin-bottom:6px">現在有些 AI 可以一次讀完非常長的內容：</p>
+      <div class="card" style="text-align:center">
+        <div class="bignum m">100 萬</div>
+        <p class="numlabel">2024 年的 Gemini-1.5-Pro 一次能讀的 token 數</p>
+      </div>
+      <p class="small">實驗中，直接讀全文的平均成績比 RAG 高 3.6%–13.1%（依模型而定）；但文件遠超過 AI 的上限時，RAG 反而比較好。</p>
+    </div>
+    <div class="col">
+      <ul class="points">
+        <li>讀全文：成績通常較好，但<b>很慢、很貴</b></li>
+        <li>RAG：只讀重點，<b>便宜很多</b>，還能指出答案出處</li>
+      </ul>
+      <div class="analogy"><span class="label">💡類比</span>RAG 像考前請助教畫重點；讀全文像把整本書從頭讀到尾，比較完整，但非常花時間。</div>
+    </div>
+  </div>
+</section>
+
+<!-- 18 分歧：取代？ -->
+<section class="slide" data-src="來源：Li et al., 2024；Liu et al., 2023；Gao et al., 2024">
+  <h2><span class="tag">⚠️ 觀點分歧</span>讀全文會取代 RAG 嗎？</h2>
+  <div class="row">
+    <div class="col">
+      <div class="card"><h3>會變強</h3><p>2024 年的新模型資源充足時，讀全文一致贏過 RAG</p></div>
+      <div class="card"><h3>讀得長 ≠ 讀得好</h3><p>2023 年的研究發現，能讀更長的模型，並沒有比較會用中間的資訊</p></div>
+      <div class="card"><h3>RAG 仍不可取代</h3><p>比較快，而且能追溯答案出處</p></div>
+    </div>
+    <div class="col" style="flex:0.9">
+      <div class="card mint-card">
+        <h3>兩全其美：先 RAG，不行再讀全文</h3>
+        <p>先用 RAG 試著回答，AI 覺得資料不夠時，才改讀整份文件。</p>
+        <div style="text-align:center;margin-top:12px">
+          <div class="bignum" style="font-size:64px">−65%</div>
+          <p class="numlabel">成本降低，成績接近讀全文</p>
+          <p class="small">以 Gemini-1.5-Pro 為例；GPT-4O 降低 39%</p>
+        </div>
+      </div>
+      <div class="analogy"><span class="label">💡類比</span>像分級轉診：小感冒在診所處理，處理不了才轉大醫院。</div>
+    </div>
+  </div>
+</section>
+
+<!-- 19 總結 -->
+<section class="slide cover" data-src="來源：本簡報整理自 7 篇 RAG 論文（Lewis 2020 – Singh 2026）">
+  <svg width="140" height="134" viewBox="0 0 210 200" aria-hidden="true">
+    <rect x="35" y="30" width="140" height="140" rx="22" fill="#8FD3C1"/>
+    <rect x="47" y="42" width="116" height="116" rx="16" fill="#FFFFFF"/>
+    <rect x="98" y="42" width="14" height="116" fill="#DDF2EC"/>
+    <path d="M73 95 Q80 88 87 95" stroke="#444" stroke-width="4" fill="none" stroke-linecap="round"/>
+    <path d="M123 95 Q130 88 137 95" stroke="#444" stroke-width="4" fill="none" stroke-linecap="round"/>
+    <circle cx="68" cy="114" r="8" fill="#FF9F9F" opacity="0.7"/>
+    <circle cx="142" cy="114" r="8" fill="#FF9F9F" opacity="0.7"/>
+    <path d="M90 114 Q105 132 120 114" stroke="#444" stroke-width="4" fill="none" stroke-linecap="round"/>
+  </svg>
+  <h2 style="margin:18px 0 26px">帶走三件事</h2>
+  <div class="steps" style="width:100%;text-align:left">
+    <div class="step card"><div class="n">1</div><h3>先查再答</h3><p>讓 AI 翻資料，答得更準、更少亂講</p></div>
+    <div class="step card"><div class="n">2</div><h3>換資料就更新</h3><p>不用重新訓練，換掉資料庫就好</p></div>
+    <div class="step card"><div class="n">3</div><h3>資料要精不要多</h3><p>RAG 仍有限制，要搭配好的檢索與人的判斷</p></div>
+  </div>
+</section>
+
+</div></div>
+
+<script>
+  const slides = Array.from(document.querySelectorAll('.slide'));
+  const total = slides.length;
+  let idx = 0;
+
+  slides.forEach((s, i) => {
+    const f = document.createElement('div');
+    f.className = 'footer';
+    const src = s.dataset.src || '';
+    f.innerHTML = (src ? '<span>' + src + '</span>' : '') + '<span class="pg">' + (i + 1) + ' / ' + total + '</span>';
+    s.appendChild(f);
+  });
+
+  function show(n) {
+    idx = Math.max(0, Math.min(total - 1, n));
+    slides.forEach((s, i) => s.classList.toggle('active', i === idx));
+    try { history.replaceState(null, '', '#' + (idx + 1)); } catch (e) {}
+  }
+
+  function fit() {
+    const stage = document.getElementById('stage');
+    const scale = Math.min(window.innerWidth / 1280, window.innerHeight / 720);
+    stage.style.transform = 'scale(' + scale + ')';
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') { show(idx + 1); e.preventDefault(); }
+    if (e.key === 'ArrowLeft' || e.key === 'PageUp') { show(idx - 1); e.preventDefault(); }
+    if (e.key === 'Home') show(0);
+    if (e.key === 'End') show(total - 1);
+  });
+  window.addEventListener('resize', fit);
+
+  const start = parseInt((location.hash || '').slice(1), 10);
+  show(Number.isFinite(start) ? start - 1 : 0);
+  fit();
+</script>
+</body>
+</html>
